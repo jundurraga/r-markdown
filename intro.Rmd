@@ -1,0 +1,347 @@
+---
+title: "Introduction to R Markdown"
+author: "Jaime Undurraga"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+# output:
+#   html_document: default
+#   pdf_document: default
+output: ioslides_presentation
+---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=8, fig.height=4, fig.path='Figs/',
+                      echo=F, warning=F, message=F)
+pandoc_table <- function(df, name, caption, col_p_name="", only.sig=F){
+  cnames <- colnames(df)
+  b <- sapply(cnames, function(x) x %in% c("p", "p.value", "p-value", "Pr(>F)", col_p_name))
+  if (any(b)){
+    idx = which(df[, cnames[b]] < 0.05, arr.ind = TRUE)
+    if (only.sig){
+      df <- df[idx, ]
+    }
+    else{
+      if(length(idx)) emphasize.strong.rows(idx)
+    }
+  }
+  set.caption(caption) 
+  pandoc.table(df, split.table = Inf, digits = 1, style="rmarkdown", justify = 'left')
+  # tab_nums(name = name, caption = caption)
+}
+
+```
+## What is R?
+
+- R is a language and environment for statistical computing and graphics. It is a GNU project which is similar to the S language and environment which was developed at Bell Laboratories (much code written for S runs unaltered under R).
+
+## R Markdown
+
+This is an R Markdown presentation. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+## why using R and RMarkdown?
+1. It is free and open source (GNU General Public License in source code form)
+2. Time and processing efficient
+3. Many libraries (linear and nonlinear modelling, classical statistical tests, time-series analysis, classification, clustering, etc)
+4. Continuosly improved and developed by the R community
+5. Well documented (your answer will be usually found in stackoverflow)
+6. It makes statistical analysis reproducible to others
+7. It is a multiplatform system (FreeBSD, Linux, Windows and MacOS)
+8. well-designed publication-quality plots can be produced
+9. It is nice
+
+## R IDE
+- R Studio is a nice Interface development enviorment to use R 
+
+## Libraries
+-There are many R libraries which can be installed and loaded.
+
+## Usefurl links
+
+- [Rmarkdown](http://rmarkdown.rstudio.com/lesson-1.html)
+
+- [Chunks](http://rmarkdown.rstudio.com/authoring_rcodechunks.html)
+
+
+
+
+```{r libraries}
+library(xlsx)
+```
+
+## Data Frames
+
+- Data Frames contain and allow to manipulate data in many ways. Imported data from Excel, SPPS, cvc, txt and other formats can be loaded into R data frames
+```{r}
+raw <- read.xlsx('./pta_data.xlsx', 1, encoding = "UTF-8")
+head(raw, n=2)
+
+```
+
+## Descriptive statistics
+
+```{r, size = "tiny"}
+summary(raw)
+
+```
+
+## Data frame from wide to long format
+```{r}
+library(reshape2)
+raw$subject <- factor(raw$subject)
+PTA <- melt(raw, id.vars=c(1:3,16:23), measure.name=4:16, variable.name = "condition",  value.name = "dBHL")
+cnd = read.table(text = as.character(PTA$condition), sep = "_", colClasses = "character")
+PTA <- cbind(PTA, cnd[c(1,4)])
+names(PTA)[names(PTA) == 'V1'] <- 'EAR'
+names(PTA)[names(PTA) == 'V4'] <- 'Frequency'
+PTA$EAR <- factor(PTA$EAR)
+PTA$Frequency = factor(as.numeric(PTA$Frequency))
+PTA <- PTA[, -4:-12]
+head(PTA, n = 5)
+```
+
+## Plotting with ggplot
+```{r}
+library(ggplot2)
+gp <- (ggplot(data = PTA,
+        aes(x = Frequency,
+            y = dBHL
+        ))
++ geom_boxplot(notch=F)
++ geom_jitter(mapping=aes(x=Frequency, y=dBHL), width=0.3, height=0, color='gray')
++ facet_grid(Sex~EAR)
++ xlab("Frequency [Hz]")
++ ylab ("dBHL [dB]"))
+```
+## Plotting with ggplot
+```{r,fig.cap="My cool caption"}
+gp
+```
+
+## Adding new Factors
+```{r}
+median_age <- round(median(raw$Age_years))
+PTA$AGE_GROUP <- ifelse(PTA$Age_years < median_age, paste("below_", as.character(median_age),sep=""),
+                        paste("above_", as.character(median_age),sep=""))
+PTA$AGE_GROUP <- factor(PTA$AGE_GROUP)
+head(PTA[ ,c(1:5, ncol(PTA))], n=10)
+```
+
+## Plotting with ggplot
+
+```{r}
+ggplot(data = PTA,
+        aes(x = AGE_GROUP,
+            y = dBHL,
+            color=AGE_GROUP
+        )) + 
+  geom_violin() + 
+  geom_jitter(mapping=aes(x=AGE_GROUP, y=dBHL), width=0.3, height=0, color='gray') + 
+  facet_grid(Sex~Frequency) + 
+  xlab("Frequency [Hz]") + 
+  ylab ("dBHL [dB]")
+```
+
+## ANOVA analysis
+
+```{r}
+library(ez)
+library(pander)
+anv = ezANOVA(data = PTA
+              , dv = .(dBHL)
+              , wid = .(subject)
+              , within = .(Frequency, EAR)
+              , between = .(Sex, AGE_GROUP)
+              , detailed = T
+              , type = 2
+)
+```
+
+## ANOVA analysis
+
+- Tables using ktable 
+
+```{r, results='asis'}
+knitr::kable(anv$ANOVA)
+```
+
+## 
+
+- Tables using pander
+
+```{r, results='asis'}
+pandoc_table(anv$ANOVA, caption="RM - ANOVA")
+```  
+
+
+## ANOVA Mauchly's Test for Sphericity
+
+```{r, echo=FALSE}
+row.names(anv$`Mauchly's Test for Sphericity`) <- NULL
+```
+
+```{r, results='asis'}
+pandoc_table(anv$`Mauchly's Test for Sphericity`, caption="Mauchly's Test for Sphericity")
+```  
+
+
+## ANOVA Sphericity Corrections
+
+```{r, echo=FALSE}
+row.names(anv$`Sphericity Corrections`) <- NULL
+```
+
+
+```{r, results='asis'}
+pandoc_table(anv$`Sphericity Corrections`, caption="Sphericity Corrections")
+```  
+
+
+## ANOVA plots
+
+```{r}
+ezPlot(data = PTA
+              , x = Frequency
+              , dv = .(dBHL)
+              , wid = .(subject)
+              , within = .(Frequency, EAR)
+              , between = .(Sex, AGE_GROUP)
+              , type = 2
+              , x_lab = "Frequency [Hz]"
+              , y_lab = "dBHL"
+              , split = AGE_GROUP
+              , col = EAR
+              , row = Sex
+              , print_code = F)
+
+```
+
+
+## ANOVA plots
+
+```{r}
+ezPlot(data = PTA
+              , x = Frequency
+              , dv = .(dBHL)
+              , wid = .(subject)
+              , within = .(Frequency)
+              , within_full = .(Frequency, EAR)
+              , between_full = .(Sex, AGE_GROUP)
+              , type = 2
+              , x_lab = "Frequency [Hz]"
+              , y_lab = "dBHL"
+              , print_code = F)
+```
+
+## Correlations
+```{r}
+library(psych)
+library(plyr)
+my_corr_f <- function(x,y)
+{
+  r_corr <- cor.test(x, y)
+  b <- lm(x ~ y)
+  tab_cor <- data.frame(Value = b$coefficients[2], 
+                        Std.Error=summary(b)$sigma, 
+                        t = r_corr$statistic, 
+                        df = r_corr$parameter, 
+                        p = r_corr$p.value, 
+                        r = r_corr$estimate)
+  row.names(tab_cor) <- NULL
+  return(tab_cor)
+}
+```
+
+## Correlations
+
+```{r}
+corrs <- ddply(PTA, .(Sex, EAR, Frequency), function(df) my_corr_f(df$Age_years, df$dBHL))
+```
+
+```{r, results='asis'}
+pandoc_table(corrs,caption="Cool table")
+```  
+
+## Plotting correlations
+
+```{r}
+library(ggrepel)
+```
+
+## Plotting correlations
+
+```{r}
+ggplot(data = PTA,
+        aes(x = Age_years,
+            y = dBHL,
+            color=EAR
+        )) + 
+         geom_point() + 
+         geom_smooth(method="lm", se=T) + 
+         geom_text_repel(data=corrs, aes(x=40, 
+                                         y=35, 
+                                         color=EAR,
+                                         label=paste("r=", round(r, digits = 2), "\n p=", round(p, digits = 2), sep=""))) + 
+         facet_grid(Sex~Frequency) + 
+         xlab("Age [Years]") + 
+         ylab ("dBHL [dB]")
+```
+
+
+## Nonparametric tests
+- Independent 2-group Mann-Whitney U Test 
+
+```{r}
+mean_freq <- ddply(PTA, .(subject, Frequency)
+                   , summarise
+                   , dBHL = mean(dBHL)
+                   , AGE_GROUP = unique(AGE_GROUP))
+
+wt <- wilcox.test(dBHL ~ AGE_GROUP, data=mean_freq) 
+tab <- data.frame(W=wt$statistic, p.value=wt$p.value)
+```
+
+```{r, results='asis'}
+pandoc_table(tab,caption="Nonparametric test")
+```  
+
+
+## Nonparametric tests
+- Kruskal Wallis Test One Way Anova by Ranks
+```{r}
+kt <- kruskal.test(dBHL ~ AGE_GROUP, data=mean_freq) 
+tab <- data.frame(chi.squared=kt$statistic, df=kt$parameter ,p.value=kt$p.value)
+pandoc.table(tab, split.table = Inf, digits = 1, style="rmarkdown", justify = 'left')
+
+kt <- kruskal.test(dBHL ~ Frequency, data=mean_freq) 
+tab <- data.frame(chi.squared=kt$statistic,df=kt$parameter, p.value=kt$p.value)
+pandoc.table(tab, split.table = Inf, digits = 1, style="rmarkdown", justify = 'left')
+
+gp <- (ggplot(data = mean_freq,
+        aes(x = Frequency,
+            y = dBHL
+        ))
++ geom_boxplot(notch=T)
++ geom_jitter(mapping=aes(x=Frequency, y=dBHL), width=0.5, height=0, color='gray')
++ xlab("Frequency [Hz]")
++ ylab ("dB HL"))
+
+```
+
+## Nonparametric tests
+
+```{r}
+gp
+```
+
+## Nonparametric tests
+- Friedman Test
+
+```{r}
+ft <- friedman.test(dBHL ~ Frequency | subject, data=mean_freq) 
+tab <- data.frame(chi.squared=ft$statistic,df=ft$parameter, p.value=ft$p.value)
+
+```
+
+```{r, results='asis'}
+pandoc_table(tab,caption="Friedman - Nonparametric test")
+```  
+
+
